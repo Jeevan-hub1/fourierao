@@ -1,0 +1,10 @@
+# FourierAO dependencies
+numpy>=1.24
+scipy>=1.10
+matplotlib>=3.7
+aotools>=1.0.7        # atmospheric turbulence + Zernike + SH-WFS utilities
+torch>=2.0           # Fourier Neural Operator predictor (CPU is fine)
+
+# Notes:
+# - numpy 2.0 users: package adds a numpy.math shim automatically.
+# - torch CPU wheel: pip install torch --index-url https://download.pytorch.org/whl/cpu
