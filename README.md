@@ -43,6 +43,7 @@ Atmospheric turbulence distorts wavefronts; a Shack-Hartmann sensor measures the
 ## Meets the official requirements
 
 Full end-to-end verification: `python scripts/verify_requirements.py`
+Complete poster→code mapping: [docs/POSTER_MAPPING.md](docs/POSTER_MAPPING.md)
 
 | Requirement | Status | Note |
 |---|---|---|
