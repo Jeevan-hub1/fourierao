@@ -45,27 +45,33 @@ def var_reduction(Z, lags=6, horizon=2, noise=0.05):
     return np.mean((Y[sp:]-cur[sp:])**2)/np.mean((Y[sp:]-X[sp:]@W)**2)
 
 boils=[0.0,0.02,0.05,0.10,0.20,0.35]
-vr=[]
+n_seeds=4
+vr=[]; vr_err=[]
 for b in boils:
-    atm=Atmo(b); Z=np.array([proj(atm.step()) for _ in range(2500)])
-    vr.append(var_reduction(Z, horizon=2))
-    print(f"  boiling={b}: {vr[-1]:.1f}x")
+    vals=[]
+    for sd in range(n_seeds):
+        np.random.seed(100+sd)
+        atm=Atmo(b); Z=np.array([proj(atm.step()) for _ in range(1800)])
+        vals.append(var_reduction(Z, horizon=2))
+    vr.append(np.mean(vals)); vr_err.append(np.std(vals))
+    print(f"  boiling={b}: {vr[-1]:.1f}x +/- {vr_err[-1]:.1f}  (n={n_seeds} seeds)")
 
 fig, ax = plt.subplots(figsize=(10,6.5))
 # literature reference bands
 ax.axhspan(1.0, 2.0, color="#ffcccc", alpha=0.5, label="On-sky predictive AO (<2x)")
 ax.axhspan(2.0, 3.5, color="#fff0b3", alpha=0.6, label="Idealized sim (2-3.5x)")
 ax.axhline(7.5, color="purple", ls=":", lw=2, label="Best-case sim (7.5x)")
-ax.plot(boils, vr, "o-", color="crimson", lw=2.5, ms=9, label="FourierAO (this work)")
+ax.errorbar(boils, vr, yerr=vr_err, fmt="o-", color="crimson", lw=2.5, ms=9,
+            capsize=4, label="FourierAO (this work, mean +/- std)")
 ax.axhline(1.0, color="black", ls="--", alpha=0.5)
 for b,v in zip(boils,vr):
     ax.annotate(f"{v:.1f}x", (b,v), textcoords="offset points",
-                xytext=(0,10), ha="center", fontsize=9, color="darkred")
+                xytext=(0,12), ha="center", fontsize=9, color="darkred")
 ax.set_yscale("log")
 ax.set_xlabel("Turbulence boiling fraction (decorrelation)")
 ax.set_ylabel("Phase-variance reduction factor (log scale)")
 ax.set_title("FourierAO Variance Reduction vs Turbulence Boiling\n"
-             "(modal space, horizon=2, WITH 5% measurement noise)")
+             "(modal space, horizon=2, 5% noise, averaged over 4 seeds)")
 ax.legend(loc="upper right"); ax.grid(alpha=0.3, which="both")
 plt.figtext(0.5, 0.005, "Simulation WITH realistic measurement noise; "
             "on-sky values further limited by imperfect wind knowledge & aliasing. "
