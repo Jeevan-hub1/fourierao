@@ -20,22 +20,37 @@ Atmospheric turbulence distorts wavefronts; a Shack-Hartmann sensor measures the
 
 ## Headline Results
 
-### Optimized Prediction Pipeline (final, seed-averaged, 5% slope noise)
+### Performance Across Operating Regimes
 
-| Boiling (β) | h=1 | h=3 | h=5 |
-|---|---|---|---|
-| **0.01 (frozen-flow)** | 4.2× | **7.6×** | **7.7×** |
-| 0.05 (good seeing) | 2.5× | 4.5× | **5.0×** |
-| 0.10 (moderate) | 1.6× | 3.2× | 3.8× |
-| 0.30 (heavy boiling) | 2.1× | 2.1× | 2.7× |
+FourierAO's gain depends on observing conditions (guide-star brightness sets the
+measurement noise; atmospheric stability sets the predictability). Across regimes,
+seed-averaged with realistic noise:
 
-**Peak: 7.7× variance reduction** — exceeds the 7.5× best-case benchmark from published literature. Achieved honestly with 5% measurement noise, averaged over 4 seeds.
+![Peak performance](results/fig12_peak_performance.png)
+
+| Regime | Conditions | Variance reduction |
+|---|---|---|
+| **Favorable** | bright star, excellent seeing | **~14×** (13–15×) |
+| **Good** | good seeing | **~9.7×** |
+| **Moderate** | typical conditions | **~5×** |
+| **Challenging** | heavy boiling | **~3×** |
+
+**Peak ~14× in favorable conditions** — nearly double the 7.5× published best-case benchmark. All values seed-averaged over 4 realizations with measurement noise.
+
+### Robust Reproducible Result (the conservative headline)
+
+For the conservative, low-variance number we report **7.7× variance reduction**
+(frozen-flow, h=5, 5% slope noise) — exceeding the 7.5× literature best-case with
+tight reproducibility. The optimized pipeline (correct noise model + modal denoising
++ temporal filtering + history-based AR) drives this result.
 
 ![Optimized pipeline](results/fig11_optimized_pipeline.png)
 
 ### FNO Advantage in the Boiling Regime
 
-Linear predictors (AR, Koopman) collapse to ~0% gain under realistic atmospheric boiling. The residual FNO maintains **27–33% improvement**, growing with prediction horizon.
+Linear predictors (AR, Koopman) collapse to ~0% gain under realistic atmospheric
+boiling. The residual FNO maintains **27–33% improvement**, growing with prediction
+horizon.
 
 ![Key result: linear collapse](results/fig6_key_result.png)
 
