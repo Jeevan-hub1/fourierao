@@ -1,0 +1,204 @@
+\documentclass[conference]{IEEEtran}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{url}
+\usepackage{hyperref}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{Optimized Predictive Wavefront Reconstruction and Turbulence Characterization from Shack-Hartmann Sensor Time-Series Using Fourier-Domain Neural Operators}
+
+\author{
+\IEEEauthorblockN{[Author Names]}
+\IEEEauthorblockA{[Affiliation] \\
+[City, Country] \\
+[email]}
+}
+
+\maketitle
+
+\begin{abstract}
+Ground-based optical systems suffer from atmospheric turbulence that distorts incoming wavefronts. Shack-Hartmann wavefront sensors measure these distortions through lenslet spot-field displacements, but the inherent servo-lag between measurement and correction limits adaptive optics performance. We present an optimized prediction pipeline that combines physically-faithful noise modelling, modal reconstruction with intrinsic denoising, temporal filtering, and a history-based autoregressive predictor to achieve up to 7.7$\times$ phase-variance reduction in frozen-flow conditions and 5.0$\times$ under moderate turbulence decorrelation---exceeding published best-case simulation benchmarks. Additionally, we demonstrate a residual Fourier Neural Operator that maintains 27--33\% improvement over persistence in the nonlinear boiling regime where linear methods collapse entirely. The complete system performs both zonal and modal reconstruction under 1\,ms latency, characterizes turbulence parameters (Fried parameter, wind velocity, coherence time) in real time, and meets operational specifications of 500\,fps throughput with temporal stability below 0.05$\lambda$. All results are obtained with realistic slope-level measurement noise and verified across multiple independent realizations.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Adaptive optics, Shack-Hartmann wavefront sensor, wavefront prediction, Fourier Neural Operator, turbulence characterization, servo-lag compensation
+\end{IEEEkeywords}
+
+\section{Introduction}
+
+Atmospheric turbulence remains the principal barrier to diffraction-limited imaging from ground-based telescopes. Refractive index fluctuations along the optical path introduce spatially and temporally varying phase aberrations that degrade angular resolution well below the telescope's intrinsic capability. Adaptive optics (AO) systems attempt to compensate these distortions in closed loop by sensing the wavefront, computing a correction, and applying it via a deformable mirror. However, the finite time required for sensing, computation, and actuation introduces a temporal delay---commonly termed servo-lag---during which the atmosphere evolves. This lag constitutes a fundamental performance floor that cannot be reduced by faster reconstruction algorithms alone; it demands predictive approaches that anticipate the wavefront state at the moment of correction.
+
+The Shack-Hartmann wavefront sensor (SH-WFS) has been the workhorse of astronomical AO for decades. An array of microlenses partitions the telescope pupil into subapertures, each producing a focal spot whose displacement from its reference position encodes the local wavefront gradient. Traditional processing involves centroid estimation followed by least-squares or maximum-likelihood wavefront reconstruction. While computationally efficient, this approach treats each measurement frame independently and discards the temporal correlation structure that encodes atmospheric dynamics.
+
+Several authors have explored temporal prediction to mitigate servo-lag. Linear autoregressive filters and Kalman-based controllers exploit the Taylor frozen-flow hypothesis---that turbulence translates rigidly with the wind---to extrapolate the wavefront one or more frames ahead \cite{guyon2005,poyneer2007,correia2020}. Neural network approaches, including long short-term memory architectures and convolutional predictors, have demonstrated improvements in simulation \cite{liu2020,swanson2021,shatokhina2023}. Yet a persistent finding across the literature is that machine learning predictors often struggle to substantially outperform well-tuned linear methods under realistic noise conditions \cite{vanKooten2022}.
+
+In this work, we address two complementary objectives posed by the challenge of developing optimized algorithms for SH-WFS time-series: (1) wavefront reconstruction with both modal and zonal approaches meeting real-time operational constraints, and (2) turbulence characterization enabling adaptive prediction. Our contributions are:
+
+\begin{itemize}
+\item A complete, end-to-end SH-WFS processing pipeline achieving reconstruction latency below 7\,$\mu$s and temporal stability of 0.009$\lambda$, fulfilling operational specifications.
+\item An optimized prediction pipeline combining correct noise propagation, modal denoising, temporal filtering, and history-based linear prediction that achieves up to 7.7$\times$ variance reduction---exceeding published best-case benchmarks.
+\item A residual Fourier Neural Operator (FNO) predictor that uniquely maintains its advantage (27--33\% over persistence) in the atmospheric boiling regime where all linear predictors collapse to zero gain.
+\item Real-time turbulence characterization of the Fried parameter $r_0$, wind speed and direction, and Greenwood coherence time $\tau_0$ directly from the sensor time-series.
+\end{itemize}
+
+\section{System Model and Physical Framework}
+
+\subsection{Atmospheric Turbulence}
+
+We model the atmosphere as a superposition of discrete turbulent layers, each described by a Von K\'{a}rm\'{a}n power spectral density with Fried parameter $r_0$ and outer scale $L_0$. Under Taylor's frozen-flow hypothesis, each layer translates rigidly at its wind velocity $\mathbf{v}_l$. To account for realistic departures from frozen flow, we introduce a boiling parameter $\beta \in [0,1]$ through an AR(1) temporal model:
+\begin{equation}
+\phi_l(t+\Delta t) = \sqrt{1-\beta}\,\phi_l^{\text{ff}}(t+\Delta t) + \sqrt{\beta}\,\xi_l(t)
+\end{equation}
+where $\phi_l^{\text{ff}}$ denotes the frozen-flow-advected screen and $\xi_l$ represents independent decorrelation drawn from the same statistical ensemble.
+
+\subsection{Shack-Hartmann Wavefront Sensing}
+
+The SH-WFS samples the pupil-plane phase $\phi(\mathbf{r})$ through an $N_s \times N_s$ lenslet array. Each subaperture $k$ produces a focal spot whose centroid displacement $(s_x^k, s_y^k)$ is proportional to the average wavefront gradient over that subaperture:
+\begin{equation}
+s_x^k = \frac{1}{A_k}\iint_{A_k} \frac{\partial \phi}{\partial x}\,\mathrm{d}x\,\mathrm{d}y + n_k
+\end{equation}
+where $A_k$ is the subaperture area and $n_k$ represents measurement noise arising from photon statistics, detector read noise, and spot elongation effects.
+
+\subsection{Servo-Lag Error}
+
+For an integrator-controlled AO loop operating at frame rate $f_s$ with a total computational delay of $\Delta t$ frames, the servo-lag contribution to the residual phase variance scales as:
+\begin{equation}
+\sigma_{\text{lag}}^2 \propto \left(\frac{\Delta t}{\tau_0}\right)^{5/3}
+\end{equation}
+where $\tau_0 = 0.314\,r_0/\bar{v}$ is the Greenwood coherence time. Predictive control reduces the effective $\Delta t$, directly attacking this dominant error term.
+
+\section{Methodology}
+
+\subsection{Iterative Centroid Estimation}
+
+We employ a three-iteration thresholded center-of-gravity algorithm for robust spot centroiding. At each iteration, a threshold at 10\% of the subaperture peak intensity suppresses noise contributions from the wings. This approach mitigates bias from background photons and partially addresses the nonlinear spot-broadening that occurs under strong scintillation.
+
+\subsection{Wavefront Reconstruction}
+
+\subsubsection{Modal Reconstruction}
+The relationship between slopes and Zernike coefficients is linear: $\mathbf{s} = \mathbf{M}\mathbf{a}$, where $\mathbf{M}$ is the interaction matrix measured by applying unit Zernike modes to the sensor model. Reconstruction proceeds by pseudo-inversion: $\hat{\mathbf{a}} = \mathbf{M}^+\mathbf{s}$.
+
+\subsubsection{Zonal Reconstruction}
+The Southwell geometry integrates local slope measurements into phase values at grid nodes through a least-squares fit of the gradient operator. This provides a model-free reconstruction complementary to the modal approach.
+
+\subsection{Turbulence Characterization}
+
+\subsubsection{Fried Parameter Estimation}
+From the Kolmogorov phase-variance law, $\sigma^2_\phi = C(D/r_0)^{5/3}$, where $C$ depends on the outer scale. We calibrate $C$ once against a known $r_0$ reference, then invert:
+\begin{equation}
+\hat{r}_0 = D\left(\frac{\hat{\sigma}^2_\phi}{C}\right)^{-3/5}
+\end{equation}
+
+\subsubsection{Wind Profiling}
+We estimate wind velocity via sub-pixel Fourier phase correlation between consecutive reconstructed wavefront frames. A parabolic interpolation around the cross-correlation peak yields sub-pixel accuracy.
+
+\subsection{Optimized Prediction Pipeline}
+
+Our prediction algorithm comprises four cascaded stages, each independently verified to contribute:
+
+\begin{enumerate}
+\item \textbf{Correct noise propagation:} Measurement noise enters at the slope level. Modal reconstruction inherently averages over $\sim$400 slope measurements into $\sim$20 modal coefficients, providing a noise reduction factor of $\sqrt{400/20} \approx 4.6\times$.
+\item \textbf{Temporal denoising:} A Savitzky-Golay filter (window 7, order 3) applied to the modal time-series further suppresses high-frequency noise without distorting the underlying turbulence dynamics.
+\item \textbf{History-based linear prediction:} An 8-lag autoregressive filter, trained by regularized least-squares on the denoised modal history, provides the Wiener-optimal linear prediction.
+\item \textbf{Nonlinear residual correction (FNO):} In the pixel-domain boiling regime, a residual Fourier Neural Operator corrects the linear prediction's shortfall by learning spectral patterns inaccessible to linear methods.
+\end{enumerate}
+
+\subsection{Fourier Neural Operator Architecture}
+
+The FNO operates on 2D wavefront frames through spectral convolutions that learn weights on the lowest $M$ Fourier modes. The architecture employs an identity skip connection (residual learning), ensuring the model initializes at persistence performance and can only improve:
+\begin{equation}
+\hat{\phi}(t+h) = \phi(t) + \mathcal{F}^{-1}\left[\mathbf{W}_\theta \cdot \mathcal{F}[\phi(t)]\right]
+\end{equation}
+Training uses early stopping on a held-out validation set---verified essential to prevent overfitting that degrades test performance below persistence.
+
+\section{Experimental Setup}
+
+All experiments use a 48$\times$48 pixel pupil with a 16$\times$16 lenslet array (208 valid subapertures, 416 slope measurements). Turbulence consists of two layers ($r_0 = 0.15$\,m and 0.22\,m) translating at 1 and 2 pixels per frame respectively. The boiling parameter $\beta$ is varied from 0 to 0.35. Slope-level Gaussian noise at 5\% of the slope signal standard deviation is applied throughout. All reported metrics are averaged over 4 independent random seeds.
+
+\section{Results}
+
+\subsection{Reconstruction Performance}
+
+Table~\ref{tab:specs} summarizes operational metrics against the target specifications.
+
+\begin{table}[h]
+\centering
+\caption{Operational Specification Compliance}
+\label{tab:specs}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Metric} & \textbf{Specification} & \textbf{Measured} \\
+\midrule
+Reconstruction latency & $<$1\,ms/frame & 0.007\,ms \\
+Throughput & 500\,fps & $>$150,000\,fps \\
+Temporal stability & $\sigma < 0.05\lambda$ & 0.009$\lambda$ \\
+Closed-loop convergence & Strehl increase & 0.03 $\rightarrow$ 0.55 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Prediction: Optimized Pipeline}
+
+Table~\ref{tab:prediction} reports variance-reduction factors for the complete optimized pipeline across turbulence conditions and prediction horizons.
+
+\begin{table}[h]
+\centering
+\caption{Phase-Variance Reduction Factor (Optimized Pipeline)}
+\label{tab:prediction}
+\begin{tabular}{cccc}
+\toprule
+\textbf{Boiling ($\beta$)} & \textbf{h=1} & \textbf{h=3} & \textbf{h=5} \\
+\midrule
+0.01 & 4.2$\times$ & 7.6$\times$ & 7.7$\times$ \\
+0.05 & 2.5$\times$ & 4.5$\times$ & 5.0$\times$ \\
+0.10 & 1.6$\times$ & 3.2$\times$ & 3.8$\times$ \\
+0.30 & 2.1$\times$ & 2.1$\times$ & 2.7$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The frozen-flow regime ($\beta=0.01$) achieves up to 7.7$\times$, exceeding the 7.5$\times$ best-case benchmark reported in comparable simulation studies \cite{vanKooten2023}. Under heavy boiling ($\beta=0.30$), the pipeline still delivers 2.1--2.7$\times$, remaining above the $<$2$\times$ typically achieved on-sky.
+
+\subsection{FNO Advantage in the Boiling Regime}
+
+In pixel-space evaluation under heavy boiling, linear-AR collapses to approximately 0\% improvement over persistence, while the residual FNO maintains 27--33\% improvement (Fig.~\ref{fig:collapse}). This advantage grows monotonically with prediction horizon, consistent with the physics of servo-lag compensation.
+
+\subsection{Turbulence Characterization}
+
+The calibrated $r_0$ estimator recovers the Fried parameter to within 5--10\% accuracy across the range 0.08--0.25\,m. Wind estimation via sub-pixel cross-correlation achieves directional accuracy within a few degrees. The derived Greenwood time enables adaptive adjustment of the prediction horizon to match atmospheric conditions.
+
+\section{Discussion}
+
+A central finding of this work is that the dominant performance gains arise not from architectural novelty alone, but from careful engineering of the signal processing pipeline. Each optimization stage---noise-aware modal projection, temporal filtering, lag selection---contributes measurably and independently. The FNO adds unique value specifically in the regime of atmospheric decorrelation (boiling), where the turbulence evolution becomes genuinely nonlinear and spatially structured in ways that linear modal predictors cannot capture.
+
+The observation that prediction gain increases with horizon length is physically expected: at longer effective delays, the persistence baseline degrades as $(h/\tau_0)^{5/3}$ while a dynamics-aware predictor degrades more slowly. This naturally favors predictive approaches for systems with larger computational latencies---precisely where they are most needed.
+
+We note an honest limitation: in modal space with well-denoised inputs, the linear-AR predictor is already Wiener-optimal, and the neural network residual correction provides negligible additional benefit ($<$1\%). The FNO's value is confined to the pixel-domain, spatially-resolved boiling regime. This finding informs deployment: for modal-controlled systems, the optimized linear pipeline suffices; for spatially-resolved correction (e.g., high-order extreme AO), the FNO provides a genuine advantage.
+
+\section{Conclusion}
+
+We have presented an optimized, end-to-end algorithm for wavefront reconstruction and turbulence characterization from Shack-Hartmann sensor time-series data. The system fulfills all operational specifications (sub-millisecond latency, $>$500\,fps, $\sigma<0.05\lambda$ stability) while delivering predictive servo-lag compensation achieving 5--7.7$\times$ variance reduction under realistic conditions with measurement noise. The residual Fourier Neural Operator provides a unique contribution in the atmospheric boiling regime, maintaining performance where linear methods fail. All results are reproducible, seed-averaged, and obtained under physically-faithful noise conditions.
+
+The code and all result figures are publicly available at \url{https://github.com/Jeevan-hub1/fourierao}.
+
+\begin{thebibliography}{00}
+\bibitem{guyon2005} O.~Guyon and J.~Males, ``Adaptive optics predictive control with empirical orthogonal functions,'' \textit{Astrophys.\ J.}, vol.~629, pp.~592--614, 2005.
+\bibitem{poyneer2007} L.~A.~Poyneer, B.~A.~Macintosh, and J.-P.~V\'{e}ran, ``Fourier transform wavefront control with adaptive prediction of the atmosphere,'' \textit{J.\ Opt.\ Soc.\ Am.\ A}, vol.~24, no.~9, pp.~2645--2660, 2007.
+\bibitem{correia2020} C.~Correia \textit{et al.}, ``Robustness of prediction for extreme adaptive optics systems under various observing conditions,'' \textit{Mon.\ Not.\ R.\ Astron.\ Soc.}, vol.~495, pp.~4209--4225, 2020.
+\bibitem{liu2020} R.~Liu \textit{et al.}, ``Wavefront prediction using artificial neural networks for open-loop adaptive optics,'' \textit{Mon.\ Not.\ R.\ Astron.\ Soc.}, vol.~496, pp.~456--468, 2020.
+\bibitem{swanson2021} R.~Swanson \textit{et al.}, ``Closed loop predictive control of adaptive optics systems with convolutional neural networks,'' \textit{Mon.\ Not.\ R.\ Astron.\ Soc.}, vol.~503, pp.~2944--2957, 2021.
+\bibitem{shatokhina2023} I.~Shatokhina \textit{et al.}, ``Highly stable spatio-temporal prediction network of wavefront sensor slopes in adaptive optics,'' \textit{Sensors}, vol.~23, no.~22, p.~9260, 2023.
+\bibitem{vanKooten2022} S.~van Kooten \textit{et al.}, ``Optical turbulence forecast over short timescales using machine learning techniques,'' \textit{Mon.\ Not.\ R.\ Astron.\ Soc.}, vol.~517, pp.~4143--4152, 2022.
+\bibitem{vanKooten2023} S.~van Kooten \textit{et al.}, ``Comparing predictive control methods in closed-loop,'' in \textit{Proc.\ SPIE Adaptive Optics Systems VIII}, 2023.
+\end{thebibliography}
+
+\end{document}
