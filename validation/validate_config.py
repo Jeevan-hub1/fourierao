@@ -1,20 +1,15 @@
 """
-Optimized predictor performance across operating regimes, at FIXED 5% slope
-noise. Uses the validated optimized configuration (lags=16, Savitzky-Golay
-window=13, horizon=5). Numbers validated on held-out seeds.
-
-Generates results/fig12_peak_performance.png
+Validate the optimized config (lags=16, sg=13, h=5) on FRESH seeds not used
+for hyperparameter selection. Confirms the improvement generalizes (no
+meta-overfitting). FIXED 5% noise.
 """
-import os, sys, math
+import math
 import numpy as np
 if not hasattr(np, "math"): np.math = math
-import matplotlib; matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import aotools
 from aotools.turbulence import infinitephasescreen
 from scipy.signal import savgol_filter
 
-RES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "results")
 np.random.seed(99)
 N, n_sub, D, L0 = 48, 16, 1.0, 50.0
 pxl_scale=D/N; sub_px=N//n_sub
@@ -68,36 +63,16 @@ def vr(cZ,nZ,h=5,lags=16,sg=13):
     W=np.linalg.solve(A,X[:sp].T@Y[:sp]); pred=X[sp:]@W
     return np.mean((Y[sp:]-cur[sp:])**2)/np.mean((Y[sp:]-pred)**2)
 
-# Held-out validation seeds; FIXED 5% noise; optimized config
-seeds=[300,301,302,303,304]
-regimes=[("Favorable\n(frozen-flow)",0.01),("Good\n(good seeing)",0.05),
-         ("Moderate\n(typical)",0.10),("Challenging\n(heavy boiling)",0.30)]
-labels=[]; means=[]; errs=[]
-print("Optimized config (lags=16, sg=13, h=5) @ FIXED 5% noise, held-out seeds:")
-for name,boil in regimes:
-    vals=np.array([vr(*gen_modal(boil,sd)) for sd in seeds])
-    labels.append(name); means.append(vals.mean()); errs.append(vals.std())
-    print(f"  {name.split(chr(10))[0]:>12}: {vals.mean():.1f}x +/- {vals.std():.1f}")
-
-fig,ax=plt.subplots(figsize=(11,6.5))
-colors=["#e74c3c","#f39c12","#27ae60","#3498db"]
-ax.bar(range(len(labels)),means,yerr=errs,capsize=6,color=colors,
-       edgecolor="black",alpha=0.85)
-ax.axhline(7.5,color="purple",ls=":",lw=2,label="Literature best-case (7.5x)")
-ax.axhspan(1,2,alpha=0.12,color="red",label="On-sky published (<2x)")
-for i,(m,e) in enumerate(zip(means,errs)):
-    ax.text(i,m+e+0.4,f"{m:.1f}x",ha="center",fontweight="bold",fontsize=11)
-ax.set_xticks(range(len(labels))); ax.set_xticklabels(labels,fontsize=9)
-ax.set_ylabel("Phase-variance reduction factor",fontsize=12)
-ax.set_title(f"FourierAO Optimized Predictor @ FIXED 5% Measurement Noise\n"
-             f"{means[0]:.0f}x (frozen-flow) down to {means[-1]:.1f}x (heavy boiling) "
-             f"- exceeding published benchmarks\n"
-             f"validated on held-out seeds; config: 16 lags, SG-window 13, horizon 5",
-             fontsize=10.5)
-ax.legend(loc="upper right"); ax.grid(alpha=0.3,axis="y")
-plt.figtext(0.5,0.005,"All results at the SAME realistic 5% slope-level noise (no noise reduction). "
-            "Gain over baseline comes purely from optimized temporal history + denoising window. "
-            "Validated on seeds not used for tuning.",ha="center",fontsize=7.5,style="italic")
-plt.tight_layout(rect=[0,0.03,1,1])
-plt.savefig(f"{RES}/fig12_peak_performance.png",dpi=130); plt.close()
-print(f"\nSaved results/fig12_peak_performance.png")
+# FRESH seeds (not used in hyperparameter selection)
+fresh_seeds=[300,301,302,303,304]
+print("="*64)
+print("  VALIDATION on FRESH seeds (config: lags=16, sg=13, h=5, 5% noise)")
+print("="*64)
+print(f"  {'boil':>6} {'VR (mean +/- std)':>22}")
+for boil in [0.01,0.05,0.10,0.30]:
+    vals=[vr(*gen_modal(boil,sd)) for sd in fresh_seeds]
+    vals=np.array(vals)
+    print(f"  {boil:>6.2f}   {vals.mean():>6.1f}x +/- {vals.std():.1f}")
+print("="*64)
+print("  If these match the optimization run, the gain is REAL (generalizes).")
+print("="*64)

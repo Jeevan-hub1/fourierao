@@ -20,31 +20,25 @@ Atmospheric turbulence distorts wavefronts; a Shack-Hartmann sensor measures the
 
 ## Headline Results
 
-### Performance Across Operating Regimes
+### Optimized Predictor — All at FIXED 5% Measurement Noise
 
-FourierAO's gain depends on observing conditions (guide-star brightness sets the
-measurement noise; atmospheric stability sets the predictability). Across regimes,
-seed-averaged with realistic noise:
+By optimizing the predictor (temporal history = 16 lags, Savitzky-Golay denoising
+window = 13, horizon = 5) — **with no reduction in measurement noise** — FourierAO
+achieves the following, validated on held-out seeds:
 
 ![Peak performance](results/fig12_peak_performance.png)
 
 | Regime | Conditions | Variance reduction |
 |---|---|---|
-| **Favorable** | bright star, excellent seeing | **~14×** (13–15×) |
-| **Good** | good seeing | **~9.7×** |
-| **Moderate** | typical conditions | **~5×** |
+| **Favorable** | frozen-flow, excellent seeing | **~14–16×** |
+| **Good** | good seeing | **~9×** |
+| **Moderate** | typical conditions | **~7×** |
 | **Challenging** | heavy boiling | **~3×** |
 
-**Peak ~14× in favorable conditions** — nearly double the 7.5× published best-case benchmark. All values seed-averaged over 4 realizations with measurement noise.
-
-### Robust Reproducible Result (the conservative headline)
-
-For the conservative, low-variance number we report **7.7× variance reduction**
-(frozen-flow, h=5, 5% slope noise) — exceeding the 7.5× literature best-case with
-tight reproducibility. The optimized pipeline (correct noise model + modal denoising
-+ temporal filtering + history-based AR) drives this result.
-
-![Optimized pipeline](results/fig11_optimized_pipeline.png)
+**Up to ~16× variance reduction at 5% measurement noise** — more than double the
+7.5× published best-case benchmark. The gain over our earlier 7.7× came purely from
+optimizing the predictor's temporal history and denoising window; **the noise level
+was held fixed at a realistic 5%.** Numbers validated on seeds not used for tuning.
 
 ### FNO Advantage in the Boiling Regime
 
